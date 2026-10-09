@@ -2,8 +2,10 @@
 # Uses a plain Python venv + pip (no conda).
 .PHONY: help setup reproduce test lint grade clean data
 
+# VENV := .venv
+# PY := $(VENV)/bin/python
 VENV := .venv
-PY := $(VENV)/bin/python
+PY := $(VENV)/Scripts/python.exe
 CONFIG ?= config.yaml
 OUTPUT_DIR ?=
 

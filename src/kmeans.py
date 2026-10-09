@@ -96,6 +96,7 @@ class KMeansScratch:
                 )
             if np.any(diag <= 0):
                 raise ValueError("mahalanobis_diag entries must be strictly positive")
+            
             return mahalanobis_sqdist(X, C, diag)
         raise ValueError(f"unknown distance {self.distance!r}")
 
@@ -115,10 +116,36 @@ class KMeansScratch:
 
         TODO(student): implement this.
         """
-        raise NotImplementedError(
-            "Implement _init_centroids in src/kmeans.py (Project 2, Task 1)."
-        )
+        n_samples = X.shape[0]
 
+        if self.init == "random":
+            idx = rng.choice(n_samples, size=self.k, replace=False)
+            return X[idx]
+        elif self.init == "kmeans++":
+            idx = rng.choice(n_samples)
+            centroids = [X[idx]]
+
+            for i in range(1, self.k):
+                # dists = np.min(np.vstack([self._sqdist(X, c[None, :]) for c in centroids]),axis=0)
+                # dists = dists.reshape(-1)
+
+                all_dists = self._sqdist(X, np.vstack(centroids))
+
+                dists = np.min(all_dists, axis=1)
+
+                total = np.sum(dists)
+                if total == 0:
+                    prob = np.ones(n_samples) / n_samples
+                else:
+                    prob = dists / total
+
+                next_idx = rng.choice(n_samples, p=prob)
+                centroids.append(X[next_idx])
+
+            return np.vstack(centroids)
+        else: 
+            raise ValueError(f"Unknown init method: {self.init}")
+        
     def _assign(self, X: np.ndarray, centroids: np.ndarray) -> np.ndarray:
         """Assignment step: index of the nearest centroid for each point.
 
@@ -127,9 +154,9 @@ class KMeansScratch:
         TODO(student): implement this.
           Hint: one call to ``self._sqdist`` plus an argmin along the right axis.
         """
-        raise NotImplementedError(
-            "Implement _assign in src/kmeans.py (Project 2, Task 1)."
-        )
+        sqdists = self._sqdist(X, centroids)
+        return np.argmin(sqdists, axis=1).astype(np.int64)
+    
 
     def _update(self, X: np.ndarray, labels: np.ndarray, centroids: np.ndarray) -> np.ndarray:
         """Update step: move each centroid to the mean of its assigned points.
@@ -142,9 +169,15 @@ class KMeansScratch:
 
         TODO(student): implement this.
         """
-        raise NotImplementedError(
-            "Implement _update in src/kmeans.py (Project 2, Task 1)."
-        )
+        k = centroids.shape[0]
+        new_centroids = np.zeros_like(centroids)
+
+        for j in range(k):
+            mask = (labels == j)
+            if np.any(mask): new_centroids[j] = X[mask].mean(axis=0)
+            else: new_centroids[j]= centroids[j]
+        return new_centroids
+            
 
     # -- the fit loop you implement ----------------------------------------
     def fit(self, X: np.ndarray) -> "KMeansScratch":
@@ -169,9 +202,50 @@ class KMeansScratch:
           Seed your generator with ``np.random.default_rng(self.seed)`` once,
           outside the restart loop, so all restarts are reproducible but distinct.
         """
-        raise NotImplementedError(
-            "Implement fit in src/kmeans.py (Project 2, Task 1)."
-        )
+        rng = np.random.default_rng(self.seed)
+        n_samples = X.shape[0]
+
+        best_inertia = np.inf
+        best_centroids = None
+        best_labels = None
+        best_iter = None
+
+        for restart in range(self.n_init):
+            centroids = self._init_centroids(X, rng)
+            labels = None
+
+            for it in range(self.max_iter):
+                new_labels = self._assign(X, centroids)
+                new_centroids = self._update(X, new_labels, centroids)
+
+                if labels is not None and np.array_equal(new_labels, labels):
+                    labels = new_labels
+                    centroids = new_centroids
+                    break
+
+                movement = np.linalg.norm(new_centroids - centroids)
+                labels = new_labels
+                centroids = new_centroids
+
+                if movement < self.tol: break
+
+            sqdists = self._sqdist(X, centroids)   # (n, k)
+            inertia = np.sum(sqdists[np.arange(n_samples), labels])
+
+
+            if inertia < best_inertia:
+                best_inertia = inertia
+                best_centroids = centroids
+                best_labels = labels
+                best_iter = it + 1
+
+        self.centroids_ = best_centroids
+        self.labels_ = best_labels
+        self.inertia_ = best_inertia
+        self.n_iter_ = best_iter
+
+        return self
+
 
     def predict(self, X: np.ndarray) -> np.ndarray:
         """Assign new points to the fitted centroids."""
